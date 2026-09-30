@@ -1,0 +1,24 @@
+============================================================
+RESPOSTAS - LABORATÓRIO 2 (CI/CD COM TERRAFORM E GITHUB ACTIONS)
+Aluno: Ricardo
+Repositório: https://github.com/Ricardo2809/meu-projeto
+============================================================
+
+Exercício 3 — Quebrando a formatação de propósito (Fail Fast)
+- Comportamento observado: Ao introduzir intencionalmente um desvio de indentação no ficheiro main.tf, o job falhou na etapa "Terraform Format Check" (terraform fmt -check) com exit code 1, cancelando imediatamente os passos seguintes (Validate, Plan e Apply).
+- Valor do Fail Fast: O princípio de falhar cedo permite identificar inconsistências estruturais e erros triviais no estágio mais rápido e de menor custo computacional da pipeline. Isso evita desperdício de tempo e recursos com execuções desnecessárias de deploy e impede que código fora do padrão avance para os ambientes de produção.
+
+Exercício 4 — Secrets e variáveis sensíveis
+- Como o GitHub armazena segredos: Em "Settings > Secrets and variables > Actions", os segredos são guardados com criptografia em repouso. Eles são injetados em memória apenas durante o job e têm os seus valores mascarados automaticamente com asteriscos (***) nos logs.
+- Por que nunca versionar senhas no código: Credenciais em texto puro no main.tf ficam acessíveis a qualquer pessoa com permissão de leitura no repositório e permanecem gravadas no histórico de commits do Git. A boa prática é referenciá-las via variáveis de ambiente (ex.: TF_VAR_postgres_password: ${{ secrets.DB_PASSWORD }}).
+
+Exercício 5 — Rollback via Git
+- Mecanismo do rollback: O comando "git revert HEAD" cria um novo commit que inverte cirurgicamente as alterações do commit problemático, preservando a integridade e a rastreabilidade do histórico do Git.
+- Resposta da pipeline: O push do commit de reversão dispara automaticamente a esteira. Na etapa de "apply", o Terraform deteta a diferença de estado e restaura a infraestrutura para o estado anterior desejado sem exigir login manual nos servidores.
+
+Exercício 6 — Estado efémero do banco de dados no Runner
+- Por que os dados não persistem entre execuções: Os runners hospedados pelo GitHub (ubuntu-latest) são máquinas virtuais efémeras e descartáveis. Ao término do job, a máquina e o daemon do Docker são destruídos, apagando todos os discos locais e volumes criados.
+- Papel do volume Docker: A diretiva "docker_volume" garante persistência apenas enquanto o mesmo host Docker estiver em execução. Em ambientes de produção reais, a persistência é obtida através de serviços de banco de dados geridos fora da esteira (ex.: AWS RDS, Cloud SQL) ou volumes de armazenamento de rede (EBS, NFS, PVCs no Kubernetes).
+
+Exercício 7 — Validação pós-deploy (Smoke Test com curl e grep)
+- Funcionamento: O smoke test automatizado foi aprimorado no arquivo terraform.yml para consultar a porta HTTP do container após o deploy via "curl" e validar a presença da string "<p>Atualizado via pipeline</p>" com o comando "grep", garantindo que a aplicação não só subiu, mas está a servir o conteúdo correto.
