@@ -1,0 +1,36 @@
+============================================================
+RESPOSTAS - LABORATÓRIO 3 (OBSERVABILIDADE COM PROMETHEUS E GRAFANA)
+Aluno: Ricardo Rivabene Mestre, R.A: 0215/25-1
+Aluno: Leonardo Gil do Prado, R.A: 0191/25-1
+Repositório: https://github.com/Ricardo2809/meu-projeto
+============================================================
+
+Exercício 1 — Subindo a stack:
+- Confirmação dos serviços: Os recursos declarados no main.tf foram provisionados via Terraform. A execução do comando "docker ps" comprova que os contêineres meu-container-web, meu-container-db, cadvisor, prometheus e grafana estão em execução simultânea.
+- Status do Target: Acesso verificado em http://localhost:9090/targets, onde o alvo cadvisor (cadvisor:8080) reporta o estado "UP" (verde), confirmando que o Prometheus consegue realizar o scrape de métricas com sucesso.
+
+Exercício 2 — Conectando a fonte de dados (Prometheus no Grafana):
+- Resposta técnica: No Grafana, a URL configurada no Data Source foi "http://prometheus:9090" e não "http://localhost:9090". Isso ocorre porque o Grafana e o Prometheus operam dentro da mesma rede Docker ("monitoring-net"). O Docker provê um DNS interno que resolve o nome do contêiner ("prometheus") para o seu IP correspondente dentro dessa rede. Se usássemos "localhost", a requisição apontaria para o interior do próprio contêiner do Grafana (onde a porta 9090 não existe), gerando falha de conexão.
+
+Exercício 3 — Montando um painel (Uso de CPU e a função rate):
+- Resposta técnica: A consulta utilizou a função "rate(container_cpu_usage_seconds_total{...}[1m])".
+- Por que usar rate(...) em vez da métrica pura: A métrica "container_cpu_usage_seconds_total" é um contador acumulado (counter) que armazena os segundos brutos de CPU consumidos desde a criação do contêiner. Se plotada diretamente, a linha seria estritamente crescente e nunca demonstraria o uso pontual. A função rate() calcula a taxa de variação por segundo dentro da janela de 1 minuto, convertendo o total acumulado na fração/número de núcleos de CPU utilizados em tempo real.
+
+Exercício 4 — Justificativa do limiar de alerta:
+- Justificativa técnica (0.7 núcleos): O consumo de CPU é medido em fração/unidade de núcleos inteiros (1 núcleo = 1.0). Sob operação regular, serviços estáticos como o Nginx consomem próximo de zero (entre 0.01 e 0.05). O limiar de 0.7 núcleos foi escolhido porque filtra variações momentâneas de inicialização e disparo de processos curtos, ao mesmo tempo em que garante detecção imediata de tarefas descontroladas ou picos anômalos sustentados (como o contêiner de estresse a 100% de um núcleo).
+
+Exercício 5 / Seção 6 — Mini-Postmortem Sem Culpa (Blameless Postmortem):
+- O que aconteceu: Detecção de elevação anômala no consumo de recursos computacionais, com saturação sustentada de 1 núcleo inteiro de CPU (1.0 core) no ambiente Docker monitorado.
+- Quando foi detectado: Às 20:46 (horário local), aproximadamente 10 a 15 segundos após o início da execução anômala, quando o painel "CPU dos containers" registrou a curva ascendente íngreme.
+- Causa raiz: Execução de processo intensivo de cálculo criptográfico de fluxo de dados contínuo (comando md5sum /dev/zero encapsulado em contêiner de carga "estresse"), demandando processamento integral ininterrupto.
+- Ação tomada: Interrupção automatizada do processo pelo mecanismo de tempo limite pré-configurado (timeout de 60 segundos), com remoção automática do contêiner instanciado (--rm).
+- Como evitar no futuro: Implementação de limites de recursos diretamente na declaração de contêineres e pods (resource limits de CPU/memória no Compose ou Kubernetes) para isolar processos "vizinhos barulhentos" (noisy neighbors), associados a regras de alerta integradas a canais de plantão (Slack/PagerDuty) para notificação proativa.
+
+Exercício 6 — Métrica de detecção (MTTD) e melhoria:
+- Tempo de detecção (MTTD): Entre o disparo da carga e a identificação visual no painel do Grafana decorreram aproximadamente 12 segundos. Esse atraso deve-se à soma do intervalo de coleta do Prometheus (scrape_interval: 5s), à janela de cálculo do rate() e à taxa de atualização do dashboard (refresh de 5s).
+- Proposta de melhoria: Em um cenário produtivo, a detecção não deve depender de observação humana contínua em telas. A resposta ideal é a automação de canais de notificação através de Contact Points no Grafana/Alertmanager enviando mensagens imediatas via webhook para canais do Slack, Microsoft Teams ou PagerDuty com severidade P1/P2.
+
+Exercício 7 — Observabilidade e o Banco de Dados (Postgres):
+- Hipótese e validação: Sim, o uso de CPU e memória do "meu-container-db" é visível no cAdvisor mesmo sem o banco pertencer à rede "monitoring-net".
+- Para quem a rede é necessária: A rede "monitoring-net" é necessária apenas para a comunicação HTTP interna entre as ferramentas (o Prometheus consultar o cAdvisor na porta 8080 e o Grafana consultar o Prometheus na porta 9090). O cAdvisor não utiliza a rede Docker para inspecionar os contêineres; ele obtém métricas diretamente do kernel do host através dos diretórios montados (/sys/fs/cgroup, /var/run/docker.sock e /var/lib/docker).
+- Conclusão sobre serviços stateless vs stateful: A observabilidade a nível de contêiner independe da natureza da aplicação ser stateless (sem estado, como Nginx) ou stateful (com estado/persistência de dados, como Postgres). Como o kernel Linux gerencia isolamento de processos e grupos de controle (cgroups) de forma agnóstica à carga, o cAdvisor e o Prometheus conseguem coletar métricas de hardware de qualquer contêiner residente no host com a mesma fidelidade.
